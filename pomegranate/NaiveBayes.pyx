@@ -248,9 +248,11 @@ cdef class NaiveBayes(BayesModel):
 		else:
 			weights = numpy.array(weights, dtype='float64')
 
-		delay = delayed(lambda model, x, weights: model.summarize(x, weights), check_pickle=False)
+		delay = delayed(lambda model, x, weights, y, i: model.summarize(x, weights*(y == i).astype('float64')), check_pickle=False)
+
+
 		with Parallel(n_jobs=n_jobs, backend='threading') as parallel:
-			parallel(delay(self.distributions[i], X[y==i], weights[y==i]) for i in range(self.n))
+			parallel(delay(self.distributions[i], X, weights, y, i) for i in range(self.n))
 
 		for i in range(self.n):
 			self.summaries[i] += weights[y == i].sum()
