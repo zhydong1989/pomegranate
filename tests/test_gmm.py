@@ -157,8 +157,8 @@ def test_initialization():
 
 	MGD = MultivariateGaussianDistribution
 
-	gmm1 = GeneralMixtureModel.from_samples(MGD, 2, X, init='kmeans++')
-	gmm2 = GeneralMixtureModel.from_samples(MGD, 2, X, init='kmeans++', max_iterations=1)
+	gmm1 = GeneralMixtureModel.from_samples(MGD, 2, X, init='first-k')
+	gmm2 = GeneralMixtureModel.from_samples(MGD, 2, X, init='first-k', max_iterations=1)
 	assert_greater(gmm1.log_probability(X).sum(), gmm2.log_probability(X).sum())
 
 	assert_equal(gmm1.d, 5)
