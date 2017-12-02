@@ -2198,19 +2198,23 @@ cdef class MultivariateGaussianDistribution(MultivariateDistribution):
 				cov = (xjxk - xj*xk/wj - xj*xk/wk + wjwk*xj*xk / (wj*wk)) / wjwk
 				self._cov[j*d + k] = self._cov[j*d + k] * inertia + cov * (1-inertia)
 
-		#try:
-		#	chol = scipy.linalg.cholesky(self.cov, lower=True)
-		#except:
-			# Taken from sklearn.gmm, it's possible there are not enough observations
-			# to get a good measurement, so reinitialize this component.
-		#	self.cov += min_covar * numpy.eye(d)
-		#	chol = scipy.linalg.cholesky(self.cov, lower=True)
+		try:
+			self.inv_cov = numpy.linalg.inv(self.cov)
+		except:
+			try:
+				chol = scipy.linalg.cholesky(self.cov, lower=True)
+			except:
+				# Taken from sklearn.gmm, it's possible there are not enough observations
+				# to get a good measurement, so reinitialize this component.
+				self.cov += min_covar * numpy.eye(d)
+				chol = scipy.linalg.cholesky(self.cov, lower=True)
+				self.inv_cov = scipy.linalg.solve_triangular(chol, numpy.eye(d),
+					lower=True).T
+
 
 		_, self._log_det = numpy.linalg.slogdet(self.cov)
-		#self.inv_cov = scipy.linalg.solve_triangular(chol, numpy.eye(d),
-		#	lower=True).T
 
-		self.inv_cov = numpy.linalg.inv(self.cov)
+		#self.inv_cov = numpy.linalg.inv(self.cov)
 		self._inv_cov = <double*> self.inv_cov.data
 		mdot(self._mu, self._inv_cov, self._inv_dot_mu, 1, d, d)
 
