@@ -92,6 +92,7 @@ cdef class MultivariateGaussianDistribution(MultivariateDistribution):
 	cdef double* chol_dot_mu
 	cdef double* _inv_cov
 	cdef double* _inv_dot_mu
+	cdef double _log_probability_missing(self, double* X) nogil
 
 cdef class DirichletDistribution(MultivariateDistribution):
 	cdef public numpy.ndarray alphas
