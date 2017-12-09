@@ -9,6 +9,7 @@ from libc.string cimport memset
 from libc.string cimport memcpy
 from libc.math cimport log10 as clog10
 from libc.math cimport sqrt as csqrt
+from libc.math cimport isnan
 
 from scipy.linalg.cython_blas cimport ddot
 
@@ -69,7 +70,7 @@ cpdef numpy.ndarray initialize_centroids(numpy.ndarray X, weights, int k,
 	"""
 
 	cdef int n = X.shape[0], d = X.shape[1]
-	cdef int count, i, j, l, m
+	cdef int count, i, j, l, m, avail
 	cdef double distance
 	cdef numpy.ndarray centroids
 	cdef numpy.ndarray min_distance
@@ -105,16 +106,20 @@ cpdef numpy.ndarray initialize_centroids(numpy.ndarray X, weights, int k,
 
 		idx = numpy.random.choice(n, p=weights)
 		centroids[0] = X[idx]
+		centroids[0][numpy.isnan(centroids[0])] = 0.0
 
 		min_distance = numpy.zeros(n, dtype='float64') + INF
 		min_distance_ptr = <double*> min_distance.data
 
 		for m in range(k-1):
 			for i in range(n):
-				distance = 0
+				distance, avail = 0, 0
 				for j in range(d):
-					distance += (X_ptr[i*d + j] - centroids_ptr[m*d + j]) ** 2
-				distance *= weights_ptr[i]
+					if not isnan(X_ptr[i*d + j]):
+						distance += (X_ptr[i*d + j] - centroids_ptr[m*d + j]) ** 2
+						avail += 1
+
+				distance *= weights_ptr[i] / avail
 
 				if distance < min_distance_ptr[i]:
 					min_distance_ptr[i] = distance
@@ -128,6 +133,7 @@ cpdef numpy.ndarray initialize_centroids(numpy.ndarray X, weights, int k,
 		centroids = numpy.zeros((1, d))
 		idx = numpy.random.choice(n, p=weights)
 		centroids[0] = X[idx]
+		centroids[0][numpy.isnan(centroids[0])] = 0
 
 		min_distance = ((X - centroids[0]) ** 2).sum(axis=1)
 		min_distance_ptr = <double*> min_distance.data
@@ -371,7 +377,7 @@ cdef class Kmeans(Model):
 		training_start_time = time.time()
 
 		self.d = d
-		self.summary_sizes = <double*> calloc(self.k, sizeof(double))
+		self.summary_sizes = <double*> calloc(self.k*d, sizeof(double))
 		self.summary_weights = <double*> calloc(self.k*d, sizeof(double))
 
 		if batch_size is None:
@@ -513,18 +519,30 @@ cdef class Kmeans(Model):
 		int column_idx, int d) nogil:
 		cdef int i, j, l, y, k = self.k, inc = 1
 		cdef double min_dist, dist, total_dist, pdist = 0.0
-		cdef double* summary_sizes = <double*> calloc(k, sizeof(double))
+		cdef double* summary_sizes = <double*> calloc(k*d, sizeof(double))
 		cdef double* summary_weights = <double*> calloc(k*d, sizeof(double))
-		memset(summary_sizes, 0, k*sizeof(double))
+		memset(summary_sizes, 0, k*d*sizeof(double))
 		memset(summary_weights, 0, k*d*sizeof(double))
 
 		cdef double* dists = <double*> calloc(n*k, sizeof(double))
 		memset(dists, 0, n*k*sizeof(double))
-		mdot(X, self.centroids_T_ptr, dists, n, k, d)
+
+		cdef double* X_ = <double*> calloc(n*d, sizeof(double))
+		memset(X_, 0, n*d*sizeof(double))
+
+		for i in range(n):
+			for j in range(d):
+				idx = i*d + j
+				if isnan(X[idx]):
+					X_[idx] = 0.0
+				else:
+					X_[idx] = X[idx]
+
+		mdot(X_, self.centroids_T_ptr, dists, n, k, d)
 
 		for i in range(n):
 			min_dist = INF
-			pdist = ddot(&d, X + i*d, &inc, X + i*d, &inc)
+			pdist = ddot(&d, X_ + i*d, &inc, X_ + i*d, &inc)
 
 			for j in range(k):
 				dist = self.centroid_norms[j] + pdist - 2*dists[i*k + j]
@@ -534,21 +552,22 @@ cdef class Kmeans(Model):
 					y = j
 			
 			total_dist += min_dist
-			summary_sizes[y] += weights[i]
 			
 			for l in range(d):
-				summary_weights[y*d + l] += X[i*d + l] * weights[i]
+				if not isnan(X[i*d + l]):
+					summary_sizes[y*d + l] += weights[i]
+					summary_weights[y*d + l] += X[i*d + l] * weights[i]
 
 		with gil:
 			for j in range(k):
-				self.summary_sizes[j] += summary_sizes[j]
-
 				for l in range(d):
+					self.summary_sizes[j*d + l] += summary_sizes[j*d + l]
 					self.summary_weights[j*d + l] += summary_weights[j*d + l]
 
 		free(summary_sizes)
 		free(summary_weights)
 		free(dists)
+		free(X_)
 		return total_dist
 
 	def from_summaries(self, double inertia=0.0, clear_summaries=True):
@@ -581,7 +600,7 @@ cdef class Kmeans(Model):
 		cdef double w_sum = 0
 
 		with nogil:
-			for i in range(k):
+			for i in range(k*d):
 				w_sum += self.summary_sizes[i]
 
 			if w_sum > 1e-8:
@@ -590,7 +609,7 @@ cdef class Kmeans(Model):
 						self.centroids_ptr[j*d + l] = \
 							inertia * self.centroids_ptr[j*d + l] \
 							+ (1-inertia) * self.summary_weights[j*d + l] \
-							/ self.summary_sizes[j]
+							/ self.summary_sizes[j*d + l]
 
 		self.centroids_T = self.centroids.T.copy()
 		self.centroids_T_ptr = <double*> self.centroids_T.data
@@ -602,7 +621,7 @@ cdef class Kmeans(Model):
 			self.clear_summaries()
 
 	def clear_summaries(self):
-		memset(self.summary_sizes, 0, self.k*sizeof(double))
+		memset(self.summary_sizes, 0, self.k*self.d*sizeof(double))
 		memset(self.summary_weights, 0, self.k*self.d*sizeof(double))
 
 	def to_json(self, separators=(',', ' : '), indent=4):

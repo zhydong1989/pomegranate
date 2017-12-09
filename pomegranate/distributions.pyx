@@ -2059,9 +2059,6 @@ cdef class MultivariateGaussianDistribution(MultivariateDistribution):
 		cdef int i, j, d = self.d
 		cdef double* dot
 
-		with gil:
-			print "HELLO"
-
 		if _is_gpu_enabled():
 			with gil:
 				x = ndarray_wrap_cpointer(X, n*d).reshape(n, d)
@@ -2073,40 +2070,33 @@ cdef class MultivariateGaussianDistribution(MultivariateDistribution):
 			dot = <double*> calloc(n*d, sizeof(double))
 			mdot(X, self._inv_cov, dot, n, d, d)
 
-		with gil:
-			print "HELLO AGAIN ??"
-
 		for i in range(n):
 			logp[i] = 0
 			for j in range(d):
 				if isnan(X[i*d + j]):
-					logp[i] = self._log_probability_missing(X+i*d+j)
+					logp[i] = self._log_probability_missing(X+i*d)
 					break
 				else:
 					logp[i] += (dot[i*d + j] - self._inv_dot_mu[j])**2
 			else:
 				logp[i] = -0.5 * (d * LOG_2_PI + logp[i]) - 0.5 * self._log_det
 
-			with gil:
-				print logp[i]
-
 		if not _is_gpu_enabled():
 			free(dot)
 
 	cdef double _log_probability_missing(self, double* X) nogil:
-		return 39874
-		cdef int i, j, d
 		cdef double logp
 
 		with gil:
-			X_ndarray = ndarray_wrap_cpointer(X, d).reshape(1, d)
-			avail = ~numpy.isnan(X_ndarray) 
+			X_ndarray = ndarray_wrap_cpointer(X, self.d)
+			avail = ~numpy.isnan(X_ndarray)
+			if avail.sum() == 0:
+				return 0
+
 			a = numpy.ix_(avail, avail)
 
-			mu = numpy.array(self.parameters[0])
-			cov = numpy.array(self.parameters[1])
-			d1 = MultivariateGaussianDistribution(mu[avail], cov[a])
 
+			d1 = MultivariateGaussianDistribution(self.mu[avail], self.cov[a])
 			logp = d1.log_probability(X_ndarray[avail])
 
 		return logp
@@ -2145,14 +2135,20 @@ cdef class MultivariateGaussianDistribution(MultivariateDistribution):
 				x = X[i*d + j]
 				if isnan(x):
 					y[i*d + j] = 0.
+
 					for k in range(d):
-						if k >= j or not isnan(X[i*d + k]):
+						if k < j and not isnan(X[i*d + k]):
 							pair_w_sum[j*d + k] -= weights[i]
-							if j != k:
-								pair_w_sum[k*d + j] -= weights[i]
+							pair_w_sum[k*d + j] -= weights[i]
+						elif k == j:
+							pair_w_sum[j*d + k] -= weights[i]
+						elif k > j:
+							pair_w_sum[j*d + k] -= weights[i]
+							pair_w_sum[k*d + j] -= weights[i]
+
 				else:
 					y[i*d + j] = x * sqrt_weight
-					column_sum[j] += x * weights[i] 
+					column_sum[j] += x * weights[i]
 					column_w_sum[j] += weights[i]
 
 		if _is_gpu_enabled():
@@ -2230,14 +2226,10 @@ cdef class MultivariateGaussianDistribution(MultivariateDistribution):
 
 		try:
 			chol = scipy.linalg.cholesky(self.cov, lower=True)
+			self.inv_cov = scipy.linalg.solve_triangular(chol, numpy.eye(d),
+				lower=True).T
 		except:
-			# Taken from sklearn.gmm, it's possible there are not enough observations
-			# to get a good measurement, so reinitialize this component.
-			self.cov += min_covar * numpy.eye(d)
-			chol = scipy.linalg.cholesky(self.cov, lower=True)
-
-		self.inv_cov = scipy.linalg.solve_triangular(chol, numpy.eye(d),
-			lower=True).T
+			self.inv_cov = numpy.linalg.inv(self.cov)
 
 
 		_, self._log_det = numpy.linalg.slogdet(self.cov)
