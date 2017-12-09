@@ -530,11 +530,15 @@ cdef class Kmeans(Model):
 		cdef double* X_ = <double*> calloc(n*d, sizeof(double))
 		memset(X_, 0, n*d*sizeof(double))
 
+		cdef double bias* = <double*> calloc(n, sizeof(double))
+		memset(bias, 0, n*sizeof(double))
+
 		for i in range(n):
 			for j in range(d):
 				idx = i*d + j
 				if isnan(X[idx]):
-					X_[idx] = 0.0
+					X_[idx] = 0.5
+					bias[i] += 0.5**2
 				else:
 					X_[idx] = X[idx]
 
@@ -542,7 +546,7 @@ cdef class Kmeans(Model):
 
 		for i in range(n):
 			min_dist = INF
-			pdist = ddot(&d, X_ + i*d, &inc, X_ + i*d, &inc)
+			pdist = ddot(&d, X_ + i*d, &inc, X_ + i*d, &inc) - bias[i]
 
 			for j in range(k):
 				dist = self.centroid_norms[j] + pdist - 2*dists[i*k + j]
