@@ -35,6 +35,15 @@ except:
 DEF NEGINF = float("-inf")
 DEF INF = float("inf")
 
+cdef double distance(double* X, double* centroid, int d) nogil:
+	cdef int i
+	cdef double distance = 0.0
+	
+	for i in range(d):
+		if not isnan(X[i]):
+			distance += (X[i] - centroid[i]) ** 2
+
+	return distance
 
 cpdef numpy.ndarray initialize_centroids(numpy.ndarray X, weights, int k,
 	init='first-k', double oversampling_factor=0.95):
@@ -70,23 +79,23 @@ cpdef numpy.ndarray initialize_centroids(numpy.ndarray X, weights, int k,
 	"""
 
 	cdef int n = X.shape[0], d = X.shape[1]
-	cdef int count, i, j, l, m, avail
-	cdef double distance
+	cdef int count, i, j, l, m
+	cdef double dist
 	cdef numpy.ndarray centroids
 	cdef numpy.ndarray min_distance
 	cdef numpy.ndarray min_idxs
+	cdef numpy.ndarray mask
 
 	cdef double* X_ptr = <double*> X.data
 	cdef double* weights_ptr
 	cdef double* min_distance_ptr
 	cdef double* centroids_ptr
-	cdef int* min_idxs_ptr
 	cdef double phi
 
 	if weights is None:
 		weights = numpy.ones(len(X), dtype='float64') / len(X)
 	else:
-		weights = weights / weights.sum()
+		weights = weights.astype('float64') / weights.sum()
 
 	weights_ptr = <double*> (<numpy.ndarray> weights).data
 
@@ -113,30 +122,28 @@ cpdef numpy.ndarray initialize_centroids(numpy.ndarray X, weights, int k,
 
 		for m in range(k-1):
 			for i in range(n):
-				distance, avail = 0, 0
-				for j in range(d):
-					if not isnan(X_ptr[i*d + j]):
-						distance += (X_ptr[i*d + j] - centroids_ptr[m*d + j]) ** 2
-						avail += 1
+				dist = distance(X_ptr + i*d, centroids_ptr + m*d, d)
+				dist *= weights_ptr[i]
 
-				distance *= weights_ptr[i] / avail
-
-				if distance < min_distance_ptr[i]:
-					min_distance_ptr[i] = distance
+				if dist < min_distance_ptr[i]:
+					min_distance_ptr[i] = dist
 
 			idx = numpy.random.choice(n, p=min_distance / min_distance.sum())
 			centroids[m+1] = X[idx]
+			centroids[m+1][numpy.isnan(centroids[m+1])] = 0.0
 
 	elif init == 'kmeans||':
-		phi = 0
-
 		centroids = numpy.zeros((1, d))
 		idx = numpy.random.choice(n, p=weights)
 		centroids[0] = X[idx]
 		centroids[0][numpy.isnan(centroids[0])] = 0
+		centroids_ptr = <double*> centroids.data
 
-		min_distance = ((X - centroids[0]) ** 2).sum(axis=1)
+		min_distance = numpy.zeros(n, dtype='float64')
 		min_distance_ptr = <double*> min_distance.data
+
+		for i in range(n):
+			min_distance_ptr[i] = distance(X_ptr + i*d, centroids_ptr, d)
 
 		min_idxs = numpy.zeros(n, dtype='int32')
 		min_idxs_ptr = <int*> min_idxs.data
@@ -149,19 +156,17 @@ cpdef numpy.ndarray initialize_centroids(numpy.ndarray X, weights, int k,
 			thresh = oversampling_factor * min_distance / phi
 
 			centroids = numpy.concatenate((centroids, X[prob < thresh]))
+			centroids[numpy.isnan(centroids)] = 0.0
 			centroids_ptr = <double*> centroids.data
 			m = centroids.shape[0] - count
 
 			if m > 0:
 				for i in range(n):
 					for l in range(m):
-						distance = 0
-						for j in range(d):
-							distance += (X_ptr[i*d + j] - centroids_ptr[(l + count)*d + j]) ** 2
-
-						if distance < min_distance_ptr[i]:
-							phi += distance - min_distance_ptr[i]
-							min_distance_ptr[i] = distance
+						dist = distance(X_ptr + i*d, centroids_ptr + (l+count)*d, d)
+						if dist < min_distance_ptr[i]:
+							phi += dist - min_distance_ptr[i]
+							min_distance_ptr[i] = dist
 							min_idxs_ptr[i] = l + count
 
 				count = centroids.shape[0]
@@ -172,6 +177,7 @@ cpdef numpy.ndarray initialize_centroids(numpy.ndarray X, weights, int k,
 		clf.fit(centroids, w)
 		centroids = clf.centroids
 
+	centroids[numpy.isnan(centroids)] = 0.0
 	return numpy.array(centroids)
 
 cdef class Kmeans(Model):
@@ -231,6 +237,7 @@ cdef class Kmeans(Model):
 			self.centroids_ptr = <double*> self.centroids.data
 			self.centroids_T = self.centroids.T.copy()
 			self.centroids_T_ptr = <double*> self.centroids_T.data
+			self.d = self.centroids.shape[1]
 
 			for i in range(self.k):
 				self.centroid_norms[i] = self.centroids[i].dot(self.centroids[i])
@@ -288,19 +295,49 @@ cdef class Kmeans(Model):
 	cdef void _predict(self, double* X, int* y, int n) nogil:
 		cdef int i, j, l, k = self.k, d = self.d
 		cdef double dist, min_dist
+		cdef double* centroid
 
 		for i in range(n):
 			min_dist = INF
 
 			for j in range(k):
-				dist = 0.0
-
-				for l in range(d):
-					dist += (X[i*d + l] - self.centroids_ptr[j*d + l]) ** 2.0
+				centroid = self.centroids_ptr + j*d
+				dist = distance(X + i*d, centroid, d)
 
 				if dist < min_dist:
 					min_dist = dist
 					y[i] = j
+
+	def distance(self, X):
+		"""Calculate the distance to each centroid.
+
+		Parameters
+		----------
+		X : array-like, shape (n_samples, n_dim)
+			The data to fit to.
+
+		Returns
+		-------
+		y : array-like, shape (n_samples, n_centroids)
+			The index of the nearest centroid.
+		"""
+
+		cdef int i, j, n = X.shape[0], d = self.d
+		cdef double* X_ptr
+		cdef double* centroid
+
+		X = numpy.array(X, dtype='float64')
+		X_ptr = <double*> (<numpy.ndarray> X).data
+
+		dist = numpy.zeros((X.shape[0], self.k))
+
+
+		for i in range(X.shape[0]):
+			for j in range(self.k):
+				centroid = self.centroids_ptr + j*d
+				dist[i, j] = distance(X_ptr + i*d, centroid, d) 
+
+		return dist
 
 	def fit(self, X, weights=None, inertia=0.0, stop_threshold=1e-3,
                 max_iterations=1e3, batch_size=None, batches_per_epoch=None,
@@ -395,18 +432,25 @@ cdef class Kmeans(Model):
 		batches_per_epoch = batches_per_epoch or len(starts)
 		n_seen_batches = 0
 
+		if self.centroids is not None:
+			initial_centroids = self.centroids.copy()
+		else:
+			initial_centroids = None
+
 		with Parallel(n_jobs=n_jobs, backend='threading') as parallel:
 			for i in range(self.n_init):
 				self.clear_summaries()
 				initial_distance_sum = INF
 				iteration, improvement = 0, INF
 
-				if weights is not None:
+				if weights is not None and initial_centroids is None:
 					self.centroids = initialize_centroids(X[:ends[0]], 
 						weights[:ends[0]], self.k, self.init)
-				else:
+				elif weights is None and initial_centroids is None:
 					self.centroids = initialize_centroids(X[:ends[0]], 
 						None, self.k, self.init)
+				else:
+					self.centroids = initial_centroids.copy()
 
 				self.centroids_ptr = <double*> self.centroids.data
 				self.centroids_T = self.centroids.T.copy()
@@ -530,15 +574,17 @@ cdef class Kmeans(Model):
 		cdef double* X_ = <double*> calloc(n*d, sizeof(double))
 		memset(X_, 0, n*d*sizeof(double))
 
-		cdef double bias* = <double*> calloc(n, sizeof(double))
-		memset(bias, 0, n*sizeof(double))
+		cdef double* bias = <double*> calloc(n*k, sizeof(double))
+		memset(bias, 0, n*k*sizeof(double))
 
 		for i in range(n):
 			for j in range(d):
 				idx = i*d + j
 				if isnan(X[idx]):
-					X_[idx] = 0.5
-					bias[i] += 0.5**2
+					X_[idx] = 0.0
+					for l in range(k):
+						bias[i*k + l] += self.centroids_T_ptr[j*k + l] ** 2
+
 				else:
 					X_[idx] = X[idx]
 
@@ -546,11 +592,10 @@ cdef class Kmeans(Model):
 
 		for i in range(n):
 			min_dist = INF
-			pdist = ddot(&d, X_ + i*d, &inc, X_ + i*d, &inc) - bias[i]
+			pdist = ddot(&d, X_ + i*d, &inc, X_ + i*d, &inc)
 
 			for j in range(k):
-				dist = self.centroid_norms[j] + pdist - 2*dists[i*k + j]
-
+				dist = self.centroid_norms[j] + pdist - 2*dists[i*k + j] - bias[i*k + j]
 				if dist < min_dist:
 					min_dist = dist
 					y = j
@@ -572,6 +617,7 @@ cdef class Kmeans(Model):
 		free(summary_weights)
 		free(dists)
 		free(X_)
+		free(bias)
 		return total_dist
 
 	def from_summaries(self, double inertia=0.0, clear_summaries=True):
