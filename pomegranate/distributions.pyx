@@ -1809,10 +1809,10 @@ cdef class IndependentComponentsDistribution(MultivariateDistribution):
 
 	property parameters:
 		def __get__(self):
-			return [self.distributions.tolist(), numpy.exp(self.weights).tolist()]
+			return [self.distributions.tolist(), list(self.weights)]
 		def __set__(self, parameters):
 			self.distributions = numpy.asarray(parameters[0], dtype=numpy.object_)
-			self.weights = numpy.log(parameters[1])
+			self.weights = parameters[1]
 
 	def __cinit__(self, distributions=[], weights=None, frozen=False):
 		"""
@@ -1838,7 +1838,7 @@ cdef class IndependentComponentsDistribution(MultivariateDistribution):
 
 	def __reduce__(self):
 		"""Serialize the distribution for pickle."""
-		return self.__class__, (self.distributions, numpy.exp(self.weights), self.frozen)
+		return self.__class__, (self.distributions, self.weights, self.frozen)
 
 	def bake(self, keys):
 		for i, distribution in enumerate(self.distributions):
@@ -2038,7 +2038,7 @@ cdef class MultivariateGaussianDistribution(MultivariateDistribution):
 		self._inv_cov = <double*> self.inv_cov.data
 		mdot(self._mu, self._inv_cov, self._inv_dot_mu, 1, d, d)
 
-		self.column_sum = <double*> calloc(d, sizeof(double))
+		self.column_sum = <double*> calloc(d*d, sizeof(double))
 		self.column_w_sum = <double*> calloc(d, sizeof(double))
 		self.pair_sum = <double*> calloc(d*d, sizeof(double))
 		self.pair_w_sum = <double*> calloc(d*d, sizeof(double))
@@ -2114,12 +2114,13 @@ cdef class MultivariateGaussianDistribution(MultivariateDistribution):
 		"""
 
 		cdef int i, j, k
-		cdef double x, sqrt_weight, w_sum = 0.0
-		cdef double* column_sum = <double*> calloc(d, sizeof(double))
+		cdef double x, w, sqrt_weight, w_sum = 0.0
+		cdef double* column_sum = <double*> calloc(d*d, sizeof(double))
 		cdef double* column_w_sum = <double*> calloc(d, sizeof(double))
 		cdef double* pair_sum
 		cdef double* pair_w_sum = <double*> calloc(d*d, sizeof(double))
-		memset(column_sum, 0, d*sizeof(double))
+
+		memset(column_sum, 0, d*d*sizeof(double))
 		memset(column_w_sum, 0, d*sizeof(double))
 		memset(pair_w_sum, 0, d*d*sizeof(double))
 
@@ -2128,28 +2129,25 @@ cdef class MultivariateGaussianDistribution(MultivariateDistribution):
 		cdef double beta = 0
 
 		for i in range(n):
-			w_sum += weights[i]
-			sqrt_weight = csqrt(weights[i])
+			w = weights[i]
+			w_sum += w
+			sqrt_weight = csqrt(w)
 
-			for j in range(d): 
+			for j in range(d):
 				x = X[i*d + j]
 				if isnan(x):
 					y[i*d + j] = 0.
 
 					for k in range(d):
-						if k < j and not isnan(X[i*d + k]):
-							pair_w_sum[j*d + k] -= weights[i]
-							pair_w_sum[k*d + j] -= weights[i]
-						elif k == j:
-							pair_w_sum[j*d + k] -= weights[i]
-						elif k > j:
-							pair_w_sum[j*d + k] -= weights[i]
-							pair_w_sum[k*d + j] -= weights[i]
+						pair_w_sum[j*d + k] -= w
+						if not isnan(X[i*d + k]):
+							pair_w_sum[k*d + j] -= w
+							column_sum[k*d + j] -= X[i*d + k] * w
 
 				else:
 					y[i*d + j] = x * sqrt_weight
-					column_sum[j] += x * weights[i]
-					column_w_sum[j] += weights[i]
+					column_sum[j*d + j] += x * w
+					column_w_sum[j] += w
 
 		if _is_gpu_enabled():
 			with gil:
@@ -2158,12 +2156,12 @@ cdef class MultivariateGaussianDistribution(MultivariateDistribution):
 				pair_sum_ndarray = cupy.dot(x_gpu.T, x_gpu).get()
 
 				for j in range(d):
-					self.column_sum[j] += column_sum[j]
 					self.column_w_sum[j] += column_w_sum[j]
 
 					for k in range(d):
 						self.pair_sum[j*d + k] += pair_sum_ndarray[j, k]
 						self.pair_w_sum[j*d + k] += pair_w_sum[j*d + k] + w_sum
+						self.column_sum[j*d + k] += column_sum[j*d + k]
 
 		else:
 			pair_sum = <double*> calloc(d*d, sizeof(double))
@@ -2173,12 +2171,12 @@ cdef class MultivariateGaussianDistribution(MultivariateDistribution):
 
 			with gil:
 				for j in range(d):
-					self.column_sum[j] += column_sum[j]
 					self.column_w_sum[j] += column_w_sum[j]
 
 					for k in range(d):
 						self.pair_sum[j*d + k] += pair_sum[j*d + k]
 						self.pair_w_sum[j*d + k] += pair_w_sum[j*d + k] + w_sum
+						self.column_sum[j*d + k] += column_sum[j*d + k]
 
 			free(pair_sum)
 
@@ -2211,17 +2209,22 @@ cdef class MultivariateGaussianDistribution(MultivariateDistribution):
 
 
 		for i in range(d):
-			mu[i] = self.column_sum[i] / self.column_w_sum[i]
+			mu[i] = self.column_sum[i*d + i] / self.column_w_sum[i]
 			self._mu[i] = self._mu[i] * inertia + mu[i] * (1-inertia)
 
 		for j in range(d):
 			for k in range(d):
-				xjxk = self.pair_sum[j*d + k]
-				wjwk = self.pair_w_sum[j*d + k]
-				xj, xk = self.column_sum[j], self.column_sum[k]
-				wj, wk = self.column_w_sum[j], self.column_w_sum[k]
+				x_jk = self.pair_sum[j*d + k]
+				w_jk = self.pair_w_sum[j*d + k]
+	            
+				if j == k:
+					x_j = self.column_sum[j*d + j]
+					x_k = self.column_sum[k*d + k]
+				else:
+					x_j = self.column_sum[j*d + j] + self.column_sum[j*d + k]
+					x_k = self.column_sum[k*d + k] + self.column_sum[k*d + j]
 
-				cov = (xjxk - xj*xk/wj - xj*xk/wk + wjwk*xj*xk / (wj*wk)) / wjwk
+				cov = (x_jk - x_j*x_k/w_jk) / w_jk if w_jk > 0.0 else 0
 				self._cov[j*d + k] = self._cov[j*d + k] * inertia + cov * (1-inertia)
 
 		try:
@@ -2229,21 +2232,23 @@ cdef class MultivariateGaussianDistribution(MultivariateDistribution):
 			self.inv_cov = scipy.linalg.solve_triangular(chol, numpy.eye(d),
 				lower=True).T
 		except:
-			self.inv_cov = numpy.linalg.inv(self.cov)
-
+			min_eig = numpy.linalg.eig(self.cov)[0].min()
+			self.cov -= numpy.eye(d) * min_eig
+			
+			chol = scipy.linalg.cholesky(self.cov, lower=True)
+			self.inv_cov = scipy.linalg.solve_triangular(chol, numpy.eye(d),
+				lower=True).T
 
 		_, self._log_det = numpy.linalg.slogdet(self.cov)
-
-		#self.inv_cov = numpy.linalg.inv(self.cov)
 		self._inv_cov = <double*> self.inv_cov.data
-		mdot(self._mu, self._inv_cov, self._inv_dot_mu, 1, d, d)
 
+		mdot(self._mu, self._inv_cov, self._inv_dot_mu, 1, d, d)
 		self.clear_summaries()
 
 	def clear_summaries(self):
 		"""Clear the summary statistics stored in the object."""
 
-		memset(self.column_sum, 0, self.d*sizeof(double))
+		memset(self.column_sum, 0, self.d*self.d*sizeof(double))
 		memset(self.column_w_sum, 0, self.d*sizeof(double))
 		memset(self.pair_sum, 0, self.d*self.d*sizeof(double))
 		memset(self.pair_w_sum, 0, self.d*self.d*sizeof(double))
