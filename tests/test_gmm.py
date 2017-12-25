@@ -407,7 +407,7 @@ def test_gmm_multivariate_gaussian_nan_from_samples():
 						   numpy.random.normal(8, 1, size=(300, 3))])
 	numpy.random.shuffle(X)
 	idxs = numpy.random.choice(numpy.arange(1800), replace=False, size=500)
-	i, j = idxs / 3, idxs % 3
+	i, j = idxs // 3, idxs % 3
 	
 	X_nan = X.copy()
 	X_nan[i, j] = numpy.nan
@@ -453,7 +453,7 @@ def test_gmm_multivariate_gaussian_nan_fit():
 						   numpy.random.normal(6, 1, size=(300, 3))])
 	numpy.random.shuffle(X)
 	idxs = numpy.random.choice(numpy.arange(2700), replace=False, size=1000)
-	i, j = idxs / 3, idxs % 3
+	i, j = idxs // 3, idxs % 3
 
 	model.fit(X)
 
@@ -538,7 +538,7 @@ def test_gmm_multivariate_gaussian_ooc_nan_from_samples():
 	X = numpy.concatenate([numpy.random.normal(i*3, 0.5, size=(200, 3)) for i in range(2)])
 	numpy.random.shuffle(X)
 	idxs = numpy.random.choice(numpy.arange(1200), replace=False, size=100)
-	i, j = idxs / 3, idxs % 3
+	i, j = idxs // 3, idxs % 3
 	X[i, j] = numpy.nan
 
 	model1 = GeneralMixtureModel.from_samples(MultivariateGaussianDistribution,
@@ -560,7 +560,7 @@ def test_gmm_multivariate_gaussian_ooc_nan_fit():
 	X = numpy.concatenate([numpy.random.normal(i*3, 0.5, size=(100, 3)) for i in range(2)])
 	numpy.random.shuffle(X)
 	idxs = numpy.random.choice(numpy.arange(600), replace=False, size=100)
-	i, j = idxs / 3, idxs % 3
+	i, j = idxs // 3, idxs % 3
 	X[i, j] = numpy.nan
 
 	mus = [numpy.ones(3)*i*3 for i in range(2)]
@@ -591,7 +591,7 @@ def test_gmm_multivariate_gaussian_minibatch_nan_from_samples():
 	X = numpy.concatenate([numpy.random.normal(i*2, 1, size=(100, 3)) for i in range(2)])
 	numpy.random.shuffle(X)
 	idxs = numpy.random.choice(numpy.arange(600), replace=False, size=100)
-	i, j = idxs / 3, idxs % 3
+	i, j = idxs // 3, idxs % 3
 	X[i, j] = numpy.nan
 
 	model1 = GeneralMixtureModel.from_samples(MultivariateGaussianDistribution,
@@ -619,7 +619,7 @@ def test_gmm_multivariate_gaussian_minibatch_nan_fit():
 	X = numpy.concatenate([numpy.random.normal(i*3, 0.5, size=(100, 3)) for i in range(2)])
 	numpy.random.shuffle(X)
 	idxs = numpy.random.choice(numpy.arange(600), replace=False, size=100)
-	i, j = idxs / 3, idxs % 3
+	i, j = idxs // 3, idxs % 3
 	X[i, j] = numpy.nan
 
 	mus = [numpy.ones(3)*i*3 for i in range(2)]

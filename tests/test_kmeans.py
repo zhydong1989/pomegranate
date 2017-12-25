@@ -28,25 +28,25 @@ def test_kmeans_from_samples():
 
 	model = Kmeans.from_samples(2, X, init='random')
 	centroids = [[ 0.1070838,   0.14769405, -0.2569194 ],
- 				 [ 8.45162528,  8.27646348,  8.02635454]]
+				 [ 8.45162528,  8.27646348,  8.02635454]]
 
 	assert_array_almost_equal(model.centroids, centroids)
 
 	model = Kmeans.from_samples(2, X, init='first-k')
 	centroids = [[ 8.2924351,   8.1156335,   7.88007494],
- 				 [ 0.14404818,  0.18963403, -0.23232582]]
- 	assert_array_almost_equal(model.centroids, centroids)
+				 [ 0.14404818,  0.18963403, -0.23232582]]
+	assert_array_almost_equal(model.centroids, centroids)
 	
 	model = Kmeans.from_samples(2, X, init='kmeans++')
 	centroids = [[ 8.45162528,  8.27646348,  8.02635454],
- 				 [ 0.1070838,   0.14769405, -0.2569194 ]]
- 	assert_array_almost_equal(model.centroids, centroids)
+				 [ 0.1070838,   0.14769405, -0.2569194 ]]
+	assert_array_almost_equal(model.centroids, centroids)
 
 	model = Kmeans.from_samples(2, X, init='kmeans||')
 	centroids = [[ 0.1070838,   0.14769405, -0.2569194 ],
- 				 [ 8.45162528,  8.27646348,  8.02635454]]
+				 [ 8.45162528,  8.27646348,  8.02635454]]
 
- 	assert_array_almost_equal(model.centroids, centroids)
+	assert_array_almost_equal(model.centroids, centroids)
 
 
 def test_kmeans_predict():
@@ -211,39 +211,39 @@ def test_kmeans_nan_from_samples():
 	X = numpy.concatenate([numpy.random.normal(0, 1, size=(25, 3)), 
 						   numpy.random.normal(8, 1, size=(25, 3))])
 	idxs = numpy.random.choice(numpy.arange(150), replace=False, size=50)
-	i, j = idxs / 3, idxs % 3
+	i, j = idxs // 3, idxs % 3
 	X[i, j] = numpy.nan
 
 	model = Kmeans.from_samples(2, X, init='random')
 	centroids = [[ 7.836165,  8.552842,  7.732688],
-       			 [ 0.28689 , -0.1444  , -0.55996 ]]
+				 [ 0.28689 , -0.1444  , -0.55996 ]]
 
 	assert_array_almost_equal(model.centroids, centroids)
 
 	model = Kmeans.from_samples(2, X, init='first-k')
 	centroids = [[ 0.284408, -0.153738, -0.57606 ],
-       			 [ 7.676938,  8.371684,  7.660732]]
+				 [ 7.676938,  8.371684,  7.660732]]
 
- 	assert_array_almost_equal(model.centroids, centroids)
+	assert_array_almost_equal(model.centroids, centroids)
 	
 	model = Kmeans.from_samples(2, X, init='kmeans++')
 	centroids = [[ 0.28689 , -0.1444  , -0.55996 ],
-       			 [ 7.836165,  8.552842,  7.732688]]
+				 [ 7.836165,  8.552842,  7.732688]]
 
- 	assert_array_almost_equal(model.centroids, centroids)
+	assert_array_almost_equal(model.centroids, centroids)
 
 	model = Kmeans.from_samples(2, X, init='kmeans||')
 	centroids = [[ 7.836165,  8.552842,  7.732688],
-       			 [ 0.28689 , -0.1444  , -0.55996 ]]
+				 [ 0.28689 , -0.1444  , -0.55996 ]]
 
- 	assert_array_almost_equal(model.centroids, centroids)
+	assert_array_almost_equal(model.centroids, centroids)
 
 
 def test_kmeans_fit():
 	X = numpy.concatenate([numpy.random.normal(i*3, 0.5, size=(100, 3)) for i in range(3)])
 	numpy.random.shuffle(X)
 	idxs = numpy.random.choice(numpy.arange(300), replace=False, size=150)
-	i, j = idxs / 3, idxs % 3
+	i, j = idxs // 3, idxs % 3
 	X[i, j] = numpy.nan
 
 	centroids = (numpy.ones((3, 3)).T * numpy.arange(3) * 3).T
@@ -252,8 +252,8 @@ def test_kmeans_fit():
 	model.fit(X)
 
 	centroids = [[-0.118461,  0.08878 , -0.021584],
-     		     [ 3.00117 ,  2.886438,  3.048999],
-     		     [ 6.005934,  6.051744,  6.053779]]
+				 [ 3.00117 ,  2.886438,  3.048999],
+				 [ 6.005934,  6.051744,  6.053779]]
 
 	assert_array_almost_equal(model.centroids, centroids)
 
@@ -262,7 +262,7 @@ def test_kmeans_nan_predict():
 	X = numpy.concatenate([numpy.random.normal(0, 1, size=(25, 3)), 
 						   numpy.random.normal(8, 1, size=(25, 3))])
 	idxs = numpy.random.choice(numpy.arange(150), replace=False, size=25)
-	i, j = idxs / 3, idxs % 3
+	i, j = idxs // 3, idxs % 3
 	X[i, j] = numpy.nan
 
 	model = Kmeans.from_samples(2, X, init='random')
@@ -301,13 +301,13 @@ def test_kmeans_nan_large_predict():
 	X = numpy.concatenate([numpy.random.normal(0, 1, size=(25, 3)), 
 						   numpy.random.normal(8, 1, size=(25, 3))])
 	idxs = numpy.random.choice(numpy.arange(150), replace=False, size=100)
-	i, j = idxs / 3, idxs % 3
+	i, j = idxs // 3, idxs % 3
 	
 	X_nan = X.copy()
 	X_nan[i, j] = numpy.nan
 	y = numpy.array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-       0, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 1, 1, 1, 0, 1,
-       1, 1, 1, 1])
+	   0, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 1, 1, 1, 0, 1,
+	   1, 1, 1, 1])
 
 	model = Kmeans.from_samples(2, X, init='random')
 	y_hat = model.predict(X_nan)
@@ -324,8 +324,8 @@ def test_kmeans_nan_large_predict():
 	model = Kmeans.from_samples(2, X, init='kmeans||')
 	y_hat = model.predict(X_nan)
 	y = numpy.array([1, 0, 1, 1, 1, 0, 1, 1, 1, 1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1,
-       1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-       0, 0, 0, 0])
+	   1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	   0, 0, 0, 0])
 
 	assert_array_equal(y, y_hat)
 
@@ -334,7 +334,7 @@ def test_kmeans_nan_multiple_init():
 	X = numpy.concatenate([numpy.random.normal(i, 0.5, size=(100, 3)) for i in range(5)])
 	numpy.random.shuffle(X)
 	idxs = numpy.random.choice(numpy.arange(1500), replace=False, size=250)
-	i, j = idxs / 3, idxs % 3
+	i, j = idxs // 3, idxs % 3
 	X[i, j] = numpy.nan
 
 	model1 = Kmeans.from_samples(5, X, init='kmeans++', n_init=1)
@@ -366,7 +366,7 @@ def test_kmeans_ooc_nan_from_samples():
 	X = numpy.concatenate([numpy.random.normal(i*3, 0.5, size=(100, 3)) for i in range(5)])
 	numpy.random.shuffle(X)
 	idxs = numpy.random.choice(numpy.arange(1500), replace=False, size=500)
-	i, j = idxs / 3, idxs % 3
+	i, j = idxs // 3, idxs % 3
 	X[i, j] = numpy.nan
 
 	model1 = Kmeans.from_samples(5, X, init='first-k', batch_size=500)
@@ -383,7 +383,7 @@ def test_kmeans_ooc_nan_fit():
 	X = numpy.concatenate([numpy.random.normal(i*3, 0.5, size=(100, 3)) for i in range(5)])
 	numpy.random.shuffle(X)
 	idxs = numpy.random.choice(numpy.arange(1500), replace=False, size=500)
-	i, j = idxs / 3, idxs % 3
+	i, j = idxs // 3, idxs % 3
 	X[i, j] = numpy.nan
 
 	centroids = (numpy.ones((5, 3)).T * numpy.arange(5) * 3).T
@@ -405,7 +405,7 @@ def test_kmeans_minibatch_nan_from_samples():
 	X = numpy.concatenate([numpy.random.normal(i*3, 0.5, size=(100, 3)) for i in range(5)])
 	numpy.random.shuffle(X)
 	idxs = numpy.random.choice(numpy.arange(1500), replace=False, size=500)
-	i, j = idxs / 3, idxs % 3
+	i, j = idxs // 3, idxs % 3
 	X[i, j] = numpy.nan
 
 	model1 = Kmeans.from_samples(5, X, init='first-k', batch_size=10)
@@ -420,7 +420,7 @@ def test_kmeans_minibatch_nan_fit():
 	X = numpy.concatenate([numpy.random.normal(i*3, 0.5, size=(100, 3)) for i in range(5)])
 	numpy.random.shuffle(X)
 	idxs = numpy.random.choice(numpy.arange(1500), replace=False, size=500)
-	i, j = idxs / 3, idxs % 3
+	i, j = idxs // 3, idxs % 3
 	X[i, j] = numpy.nan
 
 	centroids = (numpy.ones((5, 3)).T * numpy.arange(5) * 3).T
